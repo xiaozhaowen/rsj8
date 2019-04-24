@@ -6,34 +6,43 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
 
 /**
  * @author xiaozhao
  * @date 2019/4/39:50 AM
  */
-public class Start {
+public class Create {
 
     /**
-     * 创建简单队列的Flux
-     * 创建后得到了一个队列，然后订阅来触发执行，消费的形式是输出到控制台
+     * 简单创建：
+     * 1）just
+     * 2) fromArray
+     * 3) empty
+     * 4) range
+     * 5) interval
+     * 6) fromIterable
      */
     private static void simpleFlux() {
+
 //        Flux.just("Hello", "World").subscribe(System.out::println);
 
 //        String[] arr={"Hello","World","Array"};
 //        Flux.fromArray(arr).subscribe(System.out::println);
 
+        /**
+         * empty不会推送任何元素，只有一个完成的事件
+         */
 //        Flux.empty().subscribe(System.out::println);
-
 
 //        Flux.range(1,10).subscribe(System.out::println);
 
+//        Flux.interval(Duration.of(10, ChronoUnit.SECONDS)).subscribe(System.out::println);
 
-        Flux.interval(Duration.of(10, ChronoUnit.SECONDS)).subscribe(System.out::println);
-
+        List<Integer> list = Arrays.asList(1, 2, 3, 4, 5);
+        Flux.fromIterable(list)
+                .map(x -> x * 2)
+                .subscribe(System.out::println);
     }
 
 
@@ -80,16 +89,6 @@ public class Start {
             }
             sink.complete();
         }).subscribe(System.out::println);
-    }
-
-
-    /**
-     * Mono示例
-     */
-    private static void monoTest() {
-        Mono.fromSupplier(() -> "Hello").subscribe(System.out::println);
-        Mono.justOrEmpty(Optional.of("Hello")).subscribe(System.out::println);
-        Mono.create(sink -> sink.success("Hello")).subscribe(System.out::println);
     }
 
 
@@ -186,8 +185,8 @@ public class Start {
 //                .subscribe(System.out::println);
 
         Flux.fromArray(messageArray)
-                .map((msg)->msg.toUpperCase())
-                .map((msg)->msg+"--")
+                .map((msg) -> msg.toUpperCase())
+                .map((msg) -> msg + "--")
 
                 .subscribe(System.out::println);
 
@@ -196,6 +195,6 @@ public class Start {
 
 
     public static void main(String[] args) {
-        pipeLineTest();
+        simpleFlux();
     }
 }

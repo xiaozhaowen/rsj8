@@ -12,10 +12,12 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * 基本操作符使用
+ *
  * @author xiaozhao
  * @date 2019/4/42:11 PM
  */
-public class FluxDemo {
+public class Operators {
 
     /**
      * 订阅消费
@@ -25,23 +27,6 @@ public class FluxDemo {
 
         // 依次输出每个元素
         integerFlux.subscribe(i -> System.out.println(i));
-    }
-
-
-    /**
-     * 错误处理
-     */
-    private void errorHandle() {
-        Flux<Integer> integerFlux = Flux.range(1, 4)
-                .map(i -> {
-                    if (i == 2) {
-                        throw new RuntimeException("go 2");
-                    }
-                    return i;
-                });
-
-        integerFlux.subscribe(i -> System.out.println(i),
-                error -> System.out.println("Error" + error));
     }
 
 
@@ -266,8 +251,8 @@ public class FluxDemo {
 
 
     public static void main(String[] args) {
-        FluxDemo demo = new FluxDemo();
-        demo.multiPublisher();
+        Operators demo = new Operators();
+        demo.intervalTest();
         try {
             Thread.sleep(10000);
         } catch (InterruptedException e) {

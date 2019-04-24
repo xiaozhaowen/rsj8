@@ -453,14 +453,35 @@ public class FluxThreadDemo {
                     return s.length();
                 })
                 .subscribeOn(Schedulers.newSingle("source"))
-                .doOnComplete(()->print("Complete钩子"))
-                .doFinally(s->print("Finally钩子"))
+                .doOnComplete(() -> print("Complete钩子"))
+                .doFinally(s -> print("Finally钩子"))
                 .subscribe(x -> print("订阅者收到：" + x));
 
     }
 
     //------------------------------parallelFlux----------------------------------
 
+    /**
+     * 并行处理测试
+     */
+    private void parallelTest() {
+        Flux<Long> fibonacciGenerator = generatorFibonacci();
+        fibonacciGenerator
+                .parallel()
+                .runOn(Schedulers.parallel())
+                .filter(x -> {
+                    print("执行过滤:" + x);
+                    return x < 100;
+                })
+                .doOnNext(x -> print("Next钩子函数:" + x))
+                .subscribe(x -> print("订阅者收到：" + x));
+
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
 
     /**------------------------------公共方法----------------------------------*/
@@ -469,7 +490,7 @@ public class FluxThreadDemo {
      * 构建一个斐波那契数列
      */
     private Flux<Long> generatorFibonacci() {
-        Flux<Long> fibonacciGenerator = Flux.generate(() -> Tuples.<Long, Long>of(0L, 1L),
+        Flux<Long> fibonacciGenerator = Flux.generate(() -> Tuples.of(0L, 1L),
                 (state, sink) -> {
                     if (state.getT1() < 0) {
                         sink.complete();
@@ -487,12 +508,9 @@ public class FluxThreadDemo {
     }
 
 
-
-
-
     public static void main(String[] args) {
         final FluxThreadDemo demo = new FluxThreadDemo();
-        demo.publishOnSubscribeOn();
+        demo.parallelTest();
 
     }
 }

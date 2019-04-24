@@ -1,4 +1,4 @@
-package com.ab.reactor.flux;
+package com.ab.reactor.mono;
 
 
 import reactor.core.publisher.Mono;

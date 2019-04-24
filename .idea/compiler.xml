@@ -8,10 +8,12 @@
         <outputRelativeToContentRoot value="true" />
         <module name="reactor" />
         <module name="reactor-demo" />
+        <module name="rsj8" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="reactor-demo" target="1.8" />
+      <module name="rsj8" target="1.8" />
     </bytecodeTargetLevel>
   </component>
 </project>
