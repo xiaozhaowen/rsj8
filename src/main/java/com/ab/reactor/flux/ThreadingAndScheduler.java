@@ -15,18 +15,19 @@ import java.util.concurrent.Executors;
  * @author xiaozhao
  * @date 2019/4/512:10 AM
  */
-public class FluxThreadDemo {
+public class ThreadingAndScheduler {
 
-    /**------------------------------默认单线程----------------------------------*/
+    /**------------------------------默认单线程----------------------------------------------------------------------------------*/
 
     /**
-     * Reactor默认是单线程的
-     * 可以看到从生产、操作符、钩子、消费者都是一个线程
+     * Reactor默认是单线程的，运行在调用线程上
+     * 可以看到从生产者、操作符、钩子、消费者都是一个线程
      */
-    private void defaultSingleThread() {
-
+    private void runInTheCallerThread() {
+        // 生产者
         Flux<Long> fibonacciGenerator = generatorFibonacci();
 
+        // 操作符、钩子、消费者
         fibonacciGenerator.filter(x -> {
             print("执行过滤:" + x);
             return x < 100;
@@ -39,8 +40,11 @@ public class FluxThreadDemo {
     /**
      * 多个订阅者也是同一个线程
      */
-    private void defaultSingleThreadMultiConsumer() {
+    private void multiConsumerStillSingleThread() {
+        // 生产者
         Flux<Long> fibonacciGenerator = generatorFibonacci();
+
+        // 1号--操作符、钩子、消费者
         fibonacciGenerator.filter(x -> {
             print("执行过滤:" + x);
             return x < 100;
@@ -49,6 +53,7 @@ public class FluxThreadDemo {
                 .doFinally(x -> print("Finally钩子函数"))
                 .subscribe(x -> print("订阅者收到：" + x));
 
+        // 2号--操作符、钩子、消费者
         fibonacciGenerator.filter(x -> {
             print("【2】执行过滤:" + x);
             return x < 100;
@@ -61,58 +66,34 @@ public class FluxThreadDemo {
     /**
      * 在一个独立线程中运行，生产、操作符、钩子、消费者都是一个线程
      */
-    private void runOnNewThread() {
-        Thread thread = new Thread(() -> {
-            defaultSingleThread();
-        }, "TestSubThread");
+    private void sonThread() {
+        String threadName = "TestSubThread";
+        Thread thread = new Thread(() -> runInTheCallerThread(), threadName);
         thread.start();
     }
 
     /**
-     * 流水线默认运行在启动流水线的线程中
-     * 1)如果是主线程启动，那么控制台输出的就是【主线程】
-     * 2)如果以子线程启动，那么控制台输出的就是【子线程】
+     * 子流水线的线程默认就是父流水线的线程
      */
-    private void pipeLineRunOnSonThread() {
-        final Flux<Integer> flux = Flux.range(1, 5)
-                .map(item -> {
-                    System.out.println("Map的线程：[" + Thread.currentThread().getName() + "]");
-                    return item * 2;
-                });
-
-
-        /**
-         * 创建一个子线程来启动
-         */
-        Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                flux.subscribe(System.out::println);
-            }
-        }, "sonThread");
-        thread.start();
-    }
-
-    /**
-     * 流水线默认运行在启动流水线的线程中
-     * 1)如果是主线程启动，那么控制台输出的就是【主线程】
-     * 2)如果以子线程启动，那么控制台输出的就是【子线程】
-     */
-    private void pipeLineRunOnMainThread() {
-        Flux<String> flux = Flux.just("Java", "Python")
-                .map(item -> {
-                    System.out.println("Map的线程：[" + Thread.currentThread().getName() + "]");
-                    return "《" + item + "》";
+    private void sonFlux() {
+        Flux.just(1, 3, 5, 7, 9)
+                .map(x -> {
+                    print("map处理：" + x);
+                    Flux.just("Hello")
+                            .map(word -> {
+                                print("【子Flux】的Map");
+                                return word + x;
+                            })
+                            .subscribe(word -> print("【子消费】" + word));
+                    return x + 1;
                 })
-                .filter(item -> {
-                    System.out.println("Filter的线程：[" + Thread.currentThread().getName() + "]");
-                    return item.length() > 0;
-                });
-        flux.subscribe(System.out::println);
+                .doOnNext(x -> print("Next钩子函数:" + x))
+                .doFinally(x -> print("Finally钩子函数"))
+                .subscribe(x -> print("订阅者收到：" + x));
     }
 
 
-    /**-------------------------------Schedulers----------------------------------*/
+    /**-------------------------------Schedulers----------------------------------------------------------------------------------*/
 
 
     /**
@@ -145,10 +126,10 @@ public class FluxThreadDemo {
     }
 
 
-    //------------------------------Schedulers.immediate----------------------------------
+    //------------------------------Schedulers.immediate---------------------
 
     /**
-     * 在当前线程运行
+     * 在调用者的线程上运行
      * TODO 例子不能运行
      */
     private void runOnCurrentThread() {
@@ -168,7 +149,7 @@ public class FluxThreadDemo {
     }
 
 
-    //------------------------------Schedulers.single----------------------------------
+    //------------------------------Schedulers.single-------------------------
 
     /**
      * 线程池中只有一个线程，这个线程可以复用
@@ -214,7 +195,34 @@ public class FluxThreadDemo {
     }
 
 
-    //------------------------------Schedulers.parallel----------------------------------
+    private void singeThreadPool() {
+
+
+        Flux<Integer> flux = Flux.range(1, 10)
+                .map(x -> {
+                    print("map1:" + x);
+                    return x;
+                });
+
+        Scheduler scheduler = Schedulers.newSingle("AA");
+        flux.publishOn(scheduler)
+                .map(x -> {
+                    print("map2:" + x);
+                    return x;
+                })
+                .subscribe(x -> print("消费1:" + x));
+
+        flux.publishOn(scheduler)
+                .map(x -> {
+                    print("map2_2:" + x);
+                    return x;
+                })
+                .subscribe(x -> print("消费2:" + x));
+
+    }
+
+
+    //------------------------------Schedulers.parallel-----------------------
 
     /**
      * 会创建一个线程池，池中的线程数就是CPU的核数
@@ -231,7 +239,7 @@ public class FluxThreadDemo {
                 .subscribe(x -> print("订阅者收到：" + x));
     }
 
-    //------------------------------Schedulers.elastic----------------------------------
+    //------------------------------Schedulers.elastic------------------------
 
     /**
      * 可以调用阻塞API，线程池动态调整。当线程池中没有可用线程时创建新的线程，当线程闲置过久时销毁闲置的线程。
@@ -256,7 +264,7 @@ public class FluxThreadDemo {
         }
     }
 
-    //------------------------------Schedulers.fromExecutor----------------------------------
+    //------------------------------Schedulers.fromExecutor--------------------
 
     /**
      * 从Java的线程池来创建，不建议使用。应该优先使用其他的几个Scheduler：single、parallel、elastic等
@@ -283,7 +291,7 @@ public class FluxThreadDemo {
     }
 
 
-    /**------------------------------并行----------------------------------*/
+    /**------------------------------并行----------------------------------------------------------------------------------------------*/
 
     //------------------------------publishOn----------------------------------
 
@@ -328,7 +336,27 @@ public class FluxThreadDemo {
         }
     }
 
-    //------------------------------subscribeOn----------------------------------
+
+    private void publishOnSimple3() {
+        Scheduler s = Schedulers.newParallel("parallel-scheduler", 4);
+
+        final Flux<String> flux = Flux
+                .range(1, 2)
+                .map(i -> {
+                    print("map1--" + i);
+                    return 10 + i;
+                })
+                .publishOn(s)
+                .map(i -> {
+                    print("map2--" + i);
+                    return "value " + i;
+                });
+
+        new Thread(() -> flux.subscribe(x -> print("消费者:" + x)), "SON").start();
+    }
+
+
+    //------------------------------subscribeOn---------------------------------
 
     /**
      * subscribeOn 是从源头开始生效，而是由subscribeOn指定的线程来运行
@@ -364,9 +392,8 @@ public class FluxThreadDemo {
         }
     }
 
-
     /**
-     * 最简答的subscribeOn
+     * 最简单的subscribeOn
      */
     private void subscribeOnSimple2() {
         Flux.just("tom")
@@ -388,6 +415,9 @@ public class FluxThreadDemo {
         }
     }
 
+    /**
+     * 从源头开始影响，包括生产者
+     */
     private void subscribeOnSimple3() {
         Flux<Long> fibonacciGenerator = generatorFibonacci();
         fibonacciGenerator
@@ -406,7 +436,6 @@ public class FluxThreadDemo {
             e.printStackTrace();
         }
     }
-
 
     /**
      * 如果出现多次subscribeOn，则只有首个subscribeOn有效
@@ -459,7 +488,7 @@ public class FluxThreadDemo {
 
     }
 
-    //------------------------------parallelFlux----------------------------------
+    //------------------------------parallelFlux---------------------------------
 
     /**
      * 并行处理测试
@@ -484,7 +513,7 @@ public class FluxThreadDemo {
     }
 
 
-    /**------------------------------公共方法----------------------------------*/
+    /**------------------------------公共方法----------------------------------------------------------------------------------------------*/
 
     /**
      * 构建一个斐波那契数列
@@ -509,8 +538,7 @@ public class FluxThreadDemo {
 
 
     public static void main(String[] args) {
-        final FluxThreadDemo demo = new FluxThreadDemo();
+        ThreadingAndScheduler demo = new ThreadingAndScheduler();
         demo.parallelTest();
-
     }
 }

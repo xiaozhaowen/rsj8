@@ -1,7 +1,9 @@
 package com.ab.reactor.flux;
 
+import com.ab.reactor.entity.Book;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -13,13 +15,27 @@ import java.util.List;
  */
 public class PipeLineDemo {
 
+    private void pipeLine() {
+        List<Book> books = new ArrayList<>(3);
+        books.add(new Book("Java", 80));
+        books.add(new Book("Go", 120));
+        books.add(new Book("Python", 60));
+
+        Flux<Book> bookFlux = Flux.fromIterable(books)
+                .filter(book -> book.getPrice() < 100)
+                .map(book -> {
+                    book.setName("《" + book.getName() + "》");
+                    return book;
+                });
+
+        bookFlux.subscribe(book -> System.out.println(book.getName()));
+    }
+
 
     /**
      * 流水线正常结束
      */
     private void completeOk() {
-
-
 
         Flux<String> flux = Flux.fromIterable(getList());
         flux.map(item -> {
@@ -88,6 +104,6 @@ public class PipeLineDemo {
 
     public static void main(String[] args) {
         PipeLineDemo pipeLineDemo = new PipeLineDemo();
-        pipeLineDemo.completeOk();
+        pipeLineDemo.pipeLine();
     }
 }

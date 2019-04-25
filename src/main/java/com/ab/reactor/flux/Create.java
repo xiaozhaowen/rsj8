@@ -1,14 +1,17 @@
 package com.ab.reactor.flux;
 
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.publisher.FluxSink;
 
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * Flux的几种创建形式
+ *
  * @author xiaozhao
  * @date 2019/4/39:50 AM
  */
@@ -23,9 +26,11 @@ public class Create {
      * 5) interval
      * 6) fromIterable
      */
-    private static void simpleFlux() {
+    private static void simpleCreate() {
 
+//        Flux.just("OneElement").subscribe(System.out::println);
 //        Flux.just("Hello", "World").subscribe(System.out::println);
+
 
 //        String[] arr={"Hello","World","Array"};
 //        Flux.fromArray(arr).subscribe(System.out::println);
@@ -39,29 +44,39 @@ public class Create {
 
 //        Flux.interval(Duration.of(10, ChronoUnit.SECONDS)).subscribe(System.out::println);
 
-        List<Integer> list = Arrays.asList(1, 2, 3, 4, 5);
-        Flux.fromIterable(list)
-                .map(x -> x * 2)
+//        List<Integer> list = Arrays.asList(1, 2, 3, 4, 5);
+//        Flux.fromIterable(list)
+//                .map(x -> x * 2)
+//                .subscribe(System.out::println);
+
+
+        Flux.just("ABC", null)
+                .filter(x -> x != null)
                 .subscribe(System.out::println);
     }
 
-
     /**
-     * 序列的生成需要复杂的逻辑:generate
+     * 使用 generate(Consumer<SynchronousSink<T>> generator) 形式
      */
-    private static void generateFlux() {
-
+    private static void generateConsumerForm() {
         /**
          * next()方法只能最多被调用一次
          * complete方法用于结束序列，否则序列无限
          */
-
         Flux.generate(sink -> {
             sink.next("Hello");
-            sink.complete();
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            // 如果不调用complete的话，则序列无限
+//            sink.complete();
         }).subscribe(System.out::println);
+    }
 
-
+    private static void generateInitAndState_0() {
         /**
          * 第二个序列的生成逻辑中的状态对象是一个 ArrayList 对象。
          * 实际产生的值是一个随机数。产生的随机数被添加到 ArrayList 中。当产生了 10 个数时，通过 complete()方法来结束序列。
@@ -78,12 +93,65 @@ public class Create {
         }).subscribe(System.out::println);
     }
 
+    /**
+     * 第一个参数用于保存状态。2个作用：初始化和每个步骤的结果存储。初始值为0，然后在每次操作后供下一次使用
+     * 第二个参数是具体的生成逻辑，使用next，error，complete 3个方法来生成
+     */
+    private static void generateInitAndState_1() {
+        Flux<String> flux = Flux.generate(
+                () -> 0,
+                (state, sink) -> {
+                    sink.next("3 x " + state + " = " + 3 * state);
+                    if (state == 10) {
+                        sink.complete();
+                    }
+                    return state + 1;
+                });
+        flux.subscribe(System.out::println);
+    }
 
     /**
-     * 序列的生成需要复杂的逻辑:create
+     * 编程方式生成序列
      */
-    private static void createFlux() {
-        Flux.create(sink -> {
+    private static void generateInitAndState_2() {
+        Flux<String> flux = Flux.generate(
+                AtomicLong::new,
+                (state, sink) -> {
+                    long i = state.getAndIncrement();
+                    sink.next("3 x " + i + " = " + 3 * i);
+                    if (i == 10) {
+                        sink.complete();
+                    }
+                    return state;
+                });
+        flux.subscribe(System.out::println);
+    }
+
+    /**
+     * 编程方式生成序列
+     * 当state需要一些清理工作的时候使用这种方式，例如关闭数据库连接
+     */
+    private static void generateInitAndState_3() {
+        Flux<String> flux = Flux.generate(
+                AtomicLong::new,
+                (state, sink) -> {
+                    long i = state.getAndIncrement();
+                    sink.next("3 x " + i + " = " + 3 * i);
+                    if (i == 10) {
+                        sink.complete();
+                    }
+                    return state;
+                },
+                (state) -> System.out.println("state:的清理工作 " + state));
+        flux.subscribe(System.out::println);
+    }
+
+    /**
+     * 异步创建和多线程
+     * 还可以指定背压的策略
+     */
+    private void createTest() {
+        Flux.create((FluxSink<Integer> sink) -> {
             for (int i = 0; i < 10; i++) {
                 sink.next(i);
             }
@@ -91,110 +159,46 @@ public class Create {
         }).subscribe(System.out::println);
     }
 
+    /**
+     * 异步单线程
+     * TODO 示例
+     */
+    private void push() {
 
-    private static void bufferTest() {
-        Flux.range(1, 100).buffer(20).subscribe(System.out::println);
-//        Flux.interval(Duration.of(10,ChronoUnit.SECONDS)).bufferTimeout(1001,Duration.ofMillis(100)).take(2).toStream().forEach(System.out::println);
-//        Flux.range(1, 10).bufferUntil(i -> i % 2 == 0).subscribe(System.out::println);
-//        Flux.range(1, 10).bufferWhile(i -> i % 2 == 0).subscribe(System.out::println);
+    }
+
+
+    /**
+     * handle
+     */
+    private static void handle() {
+        Flux<String> alphabet = Flux.just(-1, 30, 13, 9, 20)
+                .handle((i, sink) -> {
+                    String letter = alphabet(i);
+                    if (letter != null) {
+                        sink.next(letter);
+                    }
+                });
+
+        alphabet.subscribe(System.out::println);
     }
 
     /**
-     * 输出偶数
+     * 把数字转换为对应的字母，如果超出字母的数字范围，则返回null
+     *
+     * @param letterNumber
+     * @return
      */
-    private static void filterTest() {
-        Flux.range(1, 10).filter(i -> i % 2 == 0).subscribe(System.out::println);
-    }
-
-    /**
-     * window 操作符的作用类似于 buffer，所不同的是 window 操作符是把当前流中的元素收集到另外的 Flux 序列中，因此返回值类型是 Flux<Flux<T>>
-     */
-    private static void windowTest() {
-        Flux.range(1, 100).window(20).subscribe(System.out::println);
-    }
-
-    /**
-     * zipWith 操作符把当前流中的元素与另外一个流中的元素按照一对一的方式进行合并
-     */
-    private static void zipWithTest() {
-        Flux.just("a", "b")
-                .zipWith(Flux.just("c", "d"))
-                .subscribe(System.out::println);
-
-        Flux.just("a", "b")
-                .zipWith(Flux.just("c", "d"), (s1, s2) -> String.format("%s-%s", s1, s2))
-                .subscribe(System.out::println);
-    }
-
-    private static void takeTest() {
-        Flux.range(1, 1000).take(10).subscribe(System.out::println);
-        System.out.println();
-        Flux.range(1, 1000).takeLast(10).subscribe(System.out::println);
-        System.out.println();
-        Flux.range(1, 1000).takeWhile(i -> i < 10).subscribe(System.out::println);
-        System.out.println();
-        Flux.range(1, 1000).takeUntil(i -> i == 10).subscribe(System.out::println);
-    }
-
-    private static void reduceTest() {
-        Flux.range(1, 100).reduce((x, y) -> x + y).subscribe(System.out::println);
-        Flux.range(1, 100).reduceWith(() -> 100, (x, y) -> x + y).subscribe(System.out::println);
-    }
-
-
-    private static void dispatchTest() {
-        Flux.create(sink -> {
-            sink.next(Thread.currentThread().getName());
-            sink.complete();
-        }).publishOn(Schedulers.single())
-                .map(x -> String.format("[%s] %s", Thread.currentThread().getName(), x))
-                .publishOn(Schedulers.elastic())
-                .map(x -> String.format("[%s] %s", Thread.currentThread().getName(), x))
-                .subscribeOn(Schedulers.parallel())
-                .toStream()
-                .forEach(System.out::println);
-    }
-
-
-    private static void logTest() {
-        Flux.range(1, 2).log("Range").subscribe(System.out::println);
-    }
-
-
-    private static void hotFlux() {
-        final Flux<Long> source = Flux.interval(Duration.ofMillis(1000))
-                .take(10)
-                .publish()
-                .autoConnect();
-        source.subscribe();
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    private static String alphabet(int letterNumber) {
+        if (letterNumber < 1 || letterNumber > 26) {
+            return null;
         }
-        source.toStream()
-                .forEach(System.out::println);
-    }
-
-
-    private static void pipeLineTest() {
-        String[] messageArray = {"Hello", "Reactor", "in", "Action"};
-//        Flux<String> ringBuffer = Flux.fromArray(messageArray)
-//                .map((String msg)-> msg+"__")
-//                .map((String msg)-> msg.toUpperCase())
-//                .subscribe(System.out::println);
-
-        Flux.fromArray(messageArray)
-                .map((msg) -> msg.toUpperCase())
-                .map((msg) -> msg + "--")
-
-                .subscribe(System.out::println);
-
-
+        int letterIndexAscii = 'A' + letterNumber - 1;
+        return "" + (char) letterIndexAscii;
     }
 
 
     public static void main(String[] args) {
-        simpleFlux();
+        handle();
     }
 }
