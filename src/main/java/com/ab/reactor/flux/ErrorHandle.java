@@ -1,5 +1,6 @@
 package com.ab.reactor.flux;
 
+import com.ab.reactor.exception.AppException;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.util.function.Tuples;
@@ -7,52 +8,192 @@ import reactor.util.function.Tuples;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeoutException;
 
 /**
+ * Reactor 错误处理
+ *
  * @author xiaozhao
  * @date 2019/4/128:42 AM
  */
 public class ErrorHandle {
-
     public static void main(String[] args) {
         ErrorHandle errorHandle = new ErrorHandle();
-        errorHandle.retryTest2();
+        errorHandle.catchAndRethrow();
     }
 
     /**
-     * 错误处理
+     * 最简单的错误处理
+     * 推荐做法是，消费者的错误处理回调函数是必须定义的
      */
-    private void errorHandle() {
+    private void simplestErrorHandle() {
         Flux<Integer> integerFlux = Flux.range(1, 4)
                 .map(i -> {
                     if (i == 2) {
-                        throw new RuntimeException("go 2");
+                        throw new RuntimeException("自定义错误：" + i);
                     }
                     return i;
                 });
-
-        integerFlux.subscribe(i -> System.out.println(i),
-                error -> System.out.println("Error" + error));
+        integerFlux.subscribe(
+                i -> System.out.println(i),
+                error -> System.out.println("Error" + error)
+        );
     }
 
     /**
-     * 生成斐波那契数列
-     *
-     * @return
+     * 即便错误被错误钩子或消费者处理了，流依然会停止
+     * 发生错误时，错误钩子和消费者错误回调都会执行
      */
-    private Flux<Long> generatorFibonacci() {
-        Flux<Long> fibonacciGenerator = Flux.generate(() -> Tuples.<Long, Long>of(0L, 1L),
-                (state, sink) -> {
-                    if (state.getT1() < 0) {
-                        sink.error(new RuntimeException("数据值超越了边界"));
-                    } else {
-                        sink.next(state.getT1());
+    private void fluxWillStopEvenErrorIsHandled() {
+        Flux<Integer> integerFlux = Flux.range(1, 4);
+        integerFlux
+                .map(integer -> {
+                    if (integer < 2) {
+                        return integer;
                     }
-                    return Tuples.of(state.getT2(), state.getT2() + state.getT1());
-                });
-        return fibonacciGenerator;
+                    throw new RuntimeException("自定义错误：" + integer);
+                })
+                .doOnError((e) -> {
+                    System.out.println("错误钩子：" + e.getMessage());
+                })
+                .subscribe(
+                        x -> System.out.println("消费：" + x),
+                        error -> System.out.println("消费者错误处理：" + error.getMessage())
+                );
+    }
+    /**------------------------------ 与try catch的对照 ----------------------------------*/
+    /**
+     * 出现错误时，把错误的数据值替换为一个指定的值
+     */
+    private void returnStaticFallbackValue() {
+      /*1) catch返回一个值
+           try {
+               int value = doSomethingDangerous();
+               return value;
+           }catch (Exception ex){
+               return  -1;
+           }
+       */
+//        Flux<Integer> flux = getNormalFlux();
+//        flux.map(x -> x)
+//                .onErrorReturn(-1)
+//                .subscribe(
+//                        item -> System.out.println(item),
+//                        e -> System.out.println("消费者错误处理：" + e)
+//                );
+
+
+
+
+        /*
+        2) 如果需要针对不同级别的Exception做处理的话：
+           try {
+                  int value = doSomethingDangerous();
+               return value;
+           }
+           catch (AppException ex){
+               return 200;
+           }
+           catch (Exception ex){
+               return -1;
+           }
+       */
+        Flux<Integer> flux2 = getNormalFlux();
+        flux2
+                .map(x -> {
+                    if (x == 2) {
+                        throw new RuntimeException("App错误");
+                    }
+                    return x;
+                })
+                // 只处理AppException的类型
+                .onErrorReturn(AppException.class, 200)
+                .onErrorReturn(-1)
+                //.onErrorReturn(throwable -> throwable instanceof AppException, 200)
+                //.onErrorReturn(throwable -> "XXX异常信息".equalsIgnoreCase(throwable.getMessage()), 200)
+                .subscribe(
+                        item -> System.out.println(item),
+                        e -> System.out.println("消费者错误处理：" + e)
+                );
     }
 
+    /**
+     * 出现错误时，走另外一个逻辑分支
+     */
+    private void invokeFallbackMethod() {
+       /*
+            String v1;
+            try {
+                v1 = callExternalService("key1");
+            }
+            catch (Throwable error) {
+                v1 = getFromCache("key1");
+            }
+
+            String v2;
+            try {
+                v2 = callExternalService("key2");
+            }
+            catch (Throwable error) {
+                v2 = getFromCache("key2");
+            }
+        */
+
+
+        /*
+                Flux.just("timeout1", "unknown", "key2")
+                .flatMap(k -> callExternalService(k)
+                        .onErrorResume(error -> {
+                            if (error instanceof TimeoutException)
+                                return getFromCache(k);
+                            else if (error instanceof UnknownKeyException)
+                                return registerNewEntry(k, "DEFAULT");
+                            else
+                                return Flux.error(error);
+                        })
+                );*/
+    }
+
+    /**
+     * 捕获异常后再次抛出
+     */
+    private void catchAndRethrow() {
+      /*
+        try {
+            return callExternalService(k);
+        }
+        catch (Throwable error) {
+            throw new BusinessException("oops, SLA exceeded", error);
+        }*/
+
+
+        Flux.just("timeout1")
+                .map(k -> {
+                    throw new RuntimeException("原始错误");
+                })
+                .onErrorMap(original -> new AppException("系统错误包装：", original))
+                .subscribe(
+                        x -> System.out.println(x),
+                        error -> System.out.println(error)
+                );
+    }
+
+    /**
+     * 记录错误之后，再把错误原样抛出
+     */
+    private void logAndRethrow() {
+        /*
+        try {
+            return callExternalService(k);
+        }
+        catch (RuntimeException error) {
+            //make a record of the error
+            log("uh oh, falling back, service failed for key " + k);
+            throw error;
+        }*/
+
+
+    }
 
     /**
      * 捕获明确类型的异常，注意Exception的声明顺序
@@ -68,7 +209,6 @@ public class ErrorHandle {
                     }
                     return Tuples.of(state.getT2(), state.getT2() + state.getT1());
                 });
-
         flux
                 .onErrorReturn(IllegalStateException.class, -1L)
                 .onErrorReturn(RuntimeException.class, 0L)
@@ -77,17 +217,8 @@ public class ErrorHandle {
                 });
     }
 
-
     private void onErrorMapTest() {
-        Flux<Long> flux = Flux.generate(() -> Tuples.<Long, Long>of(0L, 1L),
-                (state, sink) -> {
-                    if (state.getT1() < 0) {
-                        sink.error(new RuntimeException("数据值超越了边界"));
-                    } else {
-                        sink.next(state.getT1());
-                    }
-                    return Tuples.of(state.getT2(), state.getT2() + state.getT1());
-                });
+        Flux<Long> flux = generatorFibonacci();
         flux.onErrorMap(e -> {
             return new IllegalStateException("我是转后之后的异常");
         })
@@ -98,7 +229,6 @@ public class ErrorHandle {
                     System.out.println("异常:" + e.getMessage());
                 });
     }
-
 
     /**
      * 超时
@@ -151,7 +281,6 @@ public class ErrorHandle {
                     throw new RuntimeException("boom");
                 })
                 .onErrorReturn("uh oh");
-
         flux.subscribe(System.out::println);
         try {
             Thread.sleep(2500);
@@ -160,7 +289,9 @@ public class ErrorHandle {
         }
     }
 
-
+    /**
+     * 错误发生后，重新订阅上游的Flux。之前的Flux会终止掉
+     */
     private void retryTest2() {
         Flux.interval(Duration.ofMillis(250))
                 .map(input -> {
@@ -169,20 +300,16 @@ public class ErrorHandle {
                     }
                     throw new RuntimeException("boom");
                 })
-                .retry(1)
+                .retry(2)
                 .elapsed()
                 .subscribe(System.out::println, System.err::println);
-
         try {
-            Thread.sleep(2100);
+            Thread.sleep(22100);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
-
-
     /**------------------------------产生错误----------------------------------*/
-
     /**
      * 生产者产生异常
      */
@@ -198,7 +325,6 @@ public class ErrorHandle {
             sink.next(b);
             return b;
         });
-
         flux.subscribe(System.out::println, e -> System.out.println("消费者处理异常：" + e.getMessage()));
     }
 
@@ -211,10 +337,8 @@ public class ErrorHandle {
             sink.next(b);
             return b;
         });
-
         flux.subscribe(x -> System.out.println(x),
                 e -> System.out.println(e.getMessage()));
-
     }
 
     /**
@@ -250,14 +374,12 @@ public class ErrorHandle {
             sink.next(b);
             return b;
         });
-
         flux.subscribe(item -> {
 //                    System.out.println(item);
                     throw new RuntimeException("自定【义消费者】错误");
                 },
                 e -> System.out.println("消费者处理异常：" + e.getMessage()));
     }
-
 
     /**
      * 测试可检查异常
@@ -280,11 +402,7 @@ public class ErrorHandle {
     private void raisedCheckedException() throws IOException {
         throw new IOException("抛出可检查异常");
     }
-
-
     /**------------------------------错误处理----------------------------------*/
-
-
     /**
      * 流是否能够正常结束
      */
@@ -298,7 +416,6 @@ public class ErrorHandle {
                 }, e -> System.out.println("消费者处理异常：" + e.getMessage()));
     }
 
-
     /**
      * 生命周期的错误处理消费者和钩子都会处理
      */
@@ -309,37 +426,12 @@ public class ErrorHandle {
 //                .subscribe(x -> System.out.println(x));
                 .subscribe(x -> System.out.println(x), e -> System.out.println("消费者处理错误：" + e.getMessage()));
     }
-
     /**------------------------------错误恢复----------------------------------*/
-
-    /**
-     * 出现错误时，把错误的数据值替换为一个指定的值
-     */
-    private void onErrorReturnTest() {
-        Flux<Integer> flux = getNormalFlux();
-        flux
-                .map(x -> {
-                    if (x == 5) {
-                        throw Exceptions.propagate(new RuntimeException("数据异常"));
-                    }
-                    return x;
-                })
-                .onErrorReturn(15)
-                .doOnError(e -> System.out.println("钩子处理错误：" + e))
-                .subscribe(item -> {
-                    System.out.println(item);
-                }, e -> {
-                    System.out.println("消费者错误处理：" + e);
-                });
-    }
-
-
     /**
      * 出现错误时，把错误的数据值替换为一个指定的流
      */
     private void onErrorResumeTest() {
         Flux<Integer> flux = getNormalFlux();
-
         flux
                 .map(x -> {
                     if (x == 5) {
@@ -359,7 +451,6 @@ public class ErrorHandle {
      */
     private void onErrorContinueTest() {
         Flux<Integer> flux = getNormalFlux();
-
         flux
                 .map(x -> {
                     if (x == 5) {
@@ -376,10 +467,38 @@ public class ErrorHandle {
                 });
     }
 
+    public String convert(int i) throws IOException {
+        if (i > 3) {
+            throw new IOException("boom " + i);
+        }
+        return "OK " + i;
+    }
+
+    private void checkedException() {
+        Flux<String> converted = Flux
+                .range(1, 10)
+                .map(i -> {
+                    try {
+                        return convert(i);
+                    } catch (IOException e) {
+                        throw Exceptions.propagate(e);
+                    }
+                });
+        converted.subscribe(
+                v -> System.out.println("RECEIVED: " + v),
+                e -> {
+                    if (Exceptions.unwrap(e) instanceof IOException) {
+                        System.out.println("Something bad happened with I/O");
+                    } else {
+                        System.out.println("Something bad happened");
+                    }
+                }
+        );
+    }
+
     /**
      * ------------------------------公共方法----------------------------------
      */
-
     private Flux<Integer> getIntFlux() {
         Flux<Integer> flux = Flux.generate(() -> Integer.valueOf(0), (state, sink) -> {
             Integer b = state + 1;
@@ -420,7 +539,46 @@ public class ErrorHandle {
     }
 
     private void tttt() {
-
+        Flux<String> s = Flux.range(1, 10)
+                .map(v -> doSomethingDangerous(v))
+                .map(v -> doSecondTransform(v));
+        s.subscribe(value -> System.out.println("RECEIVED " + value),
+                error -> System.err.println("CAUGHT " + error)
+        );
+        try {
+            for (int i = 1; i < 11; i++) {
+                String v1 = doSomethingDangerous(i);
+                String v2 = doSecondTransform(v1);
+                System.out.println("RECEIVED " + v2);
+            }
+        } catch (Throwable t) {
+            System.err.println("CAUGHT " + t);
+        }
     }
 
+    private String doSomethingDangerous(Integer v) {
+        return null;
+    }
+
+    private String doSecondTransform(String v) {
+        return v;
+    }
+
+    /**
+     * 生成斐波那契数列
+     *
+     * @return
+     */
+    private Flux<Long> generatorFibonacci() {
+        Flux<Long> fibonacciGenerator = Flux.generate(() -> Tuples.<Long, Long>of(0L, 1L),
+                (state, sink) -> {
+                    if (state.getT1() < 0) {
+                        sink.error(new RuntimeException("数据值超越了边界"));
+                    } else {
+                        sink.next(state.getT1());
+                    }
+                    return Tuples.of(state.getT2(), state.getT2() + state.getT1());
+                });
+        return fibonacciGenerator;
+    }
 }

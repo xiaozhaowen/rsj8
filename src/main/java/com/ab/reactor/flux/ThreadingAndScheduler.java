@@ -1,5 +1,6 @@
 package com.ab.reactor.flux;
 
+import reactor.core.publisher.DirectProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors;
  * @date 2019/4/512:10 AM
  */
 public class ThreadingAndScheduler {
+
 
     /**------------------------------默认单线程----------------------------------------------------------------------------------*/
 
@@ -536,9 +538,157 @@ public class ThreadingAndScheduler {
         System.out.println("[" + Thread.currentThread().getName() + "] " + text);
     }
 
+    /**
+     * 订阅形式的不同会导致多线程行为不同
+     */
+    private void validate() {
+        Flux.range(1, 100)
+                .subscribeOn(Schedulers.parallel())
+                .parallel()
+                .runOn(Schedulers.parallel())
+//                .map(x -> {
+//                    print("map");
+//                    return x;
+//                })
+                .subscribe(x -> {
+                    print("订阅者" + x);
+                });
+//                .subscribe(new Subscriber<Integer>() {
+//                    @Override
+//                    public void onSubscribe(Subscription s) {
+//                        s.request(100);
+//                    }
+//
+//                    @Override
+//                    public void onNext(Integer integer) {
+//                        print("订阅者");
+//                    }
+//
+//                    @Override
+//                    public void onError(Throwable t) {
+//                    }
+//
+//                    @Override
+//                    public void onComplete() {
+//                    }
+//                });
+    }
+
+
+    /**
+     * 如果父Flux的某个操作符中使用了一个子Flux.  只要子Flux不开启新线程的话，
+     */
+    private void sonFluxInParentMap() {
+        Flux.range(1, 100)
+                .parallel()
+                .runOn(Schedulers.parallel())
+                .map(x -> {
+                    print("父map：" + x);
+                    Flux.just(x)
+//                            .publishOn(Schedulers.parallel())
+                            .map(item -> {
+                                print("子map----------------:" + item);
+                                return item;
+                            })
+                            .subscribe();
+                    print("父map2222222：" + x);
+                    return x;
+                })
+                .subscribe();
+    }
+
+
+    private void fluxInFlux() {
+        Flux.just("Hello")
+                .map(x -> {
+                    Flux.range(1, 16)
+                            .doOnNext(tt -> {
+                            })
+                            .parallel()
+                            .runOn(Schedulers.parallel())
+                            .map(s -> {
+                                try {
+                                    Thread.sleep(5);
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                }
+                                print("map2 内部数据:" + s);
+                                return s;
+                            })
+                            .sequential()
+                            .blockLast();
+
+                    print("外部1--" + x);
+                    return x;
+                })
+                .map(x -> {
+                    print("外部map2--" + x);
+                    return x;
+                })
+                .subscribe(t -> {
+                }, e -> {
+                    System.out.println(e);
+                });
+    }
+
+
+    private void rightBlock() {
+
+        DirectProcessor<String> processor = DirectProcessor.create();
+
+
+        Flux.just("ABC").map(x -> {
+            String result = "加解密--" + x;
+            print(result);
+            return result;
+        })
+                .map(x -> {
+                    Scheduler scheduler = Schedulers.parallel();
+                    Flux.range(1, 25)
+                            .subscribeOn(scheduler)
+                            .parallel()
+                            .runOn(scheduler)
+                            .map(t -> {
+                                print("转换--" + t);
+                                return t;
+                            })
+                            .sequential()
+                            .doFinally(t -> {
+                                print("执行结束");
+                                processor.onNext("传递给SPI");
+                                processor.onComplete();
+                            })
+                            .subscribe();
+                    return x;
+                })
+                .
+                        subscribe(x -> {
+
+                        });
+
+
+        processor.subscribe(x -> {
+            print("SPI层--" + x);
+        });
+
+    }
+
+
+
+
+
+
+
+
 
     public static void main(String[] args) {
+
         ThreadingAndScheduler demo = new ThreadingAndScheduler();
-        demo.parallelTest();
+        demo.rightBlock();
+        try {
+            Thread.sleep(50000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }

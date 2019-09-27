@@ -180,39 +180,34 @@ public class WorkQueueProcessorDemo {
      *
      */
     private void realTest() {
-        WorkQueueProcessor<Message> workQueueProcessor = WorkQueueProcessor.create();
-
+        Scheduler scheduler = Schedulers.newParallel("my-parallel-wxz-");
+//        WorkQueueProcessor<Message> workQueueProcessor = WorkQueueProcessor.create();
+        WorkQueueProcessor<Message> workQueueProcessor =
+                WorkQueueProcessor.<Message>builder().bufferSize(32).build();
         // 构建流水线
         workQueueProcessor
-                .parallel(1)
-                .runOn(Schedulers.newParallel("pp", 1))
-                .map(message -> {
-                    print("map1 " + message.getHead());
-                    if ("head3".equals(message.getHead())) {
-                        print("-----------------------------");
-                        throw new RuntimeException("自定义异常：" + message.getHead());
-                    }
-                    message.setHead(message.getHead() + "-map1");
-                    return message;
-                })
+                .parallel()
+                .runOn(scheduler)
+//                .map(message -> {
+//                    print("map1 " + message.getHead());
+//                    if ("head3".equals(message.getHead())) {
+//                        print("-----------------------------");
+//                        throw new RuntimeException("自定义异常：" + message.getHead());
+//                    }
+//                    message.setHead(message.getHead() + "-map1");
+//                    return message;
+//                })
                 .map(message -> {
                     print("map2 " + message.getHead());
                     message.setHead(message.getHead() + "-map2");
                     return message;
                 })
-                .sequential()
-                .onErrorContinue((e, value) -> {
-                    print("【onErrorContinue】" + e.getMessage());
-                    print("【onErrorContinue】" + value);
-                    System.out.println();
-                })
-                .doOnError(e -> print("【错误钩子】" + e.getMessage()))
-                .subscribe(new RingBufferSubscriber("消费者"));
+                .subscribe();
 
 
         // 发布数据
         FluxSink<Message> fluxSink = workQueueProcessor.sink();
-        for (int i = 1; i <= 10; i++) {
+        for (int i = 1; i <= 16; i++) {
             fluxSink.next(new Message("head" + i, "body" + i));
         }
     }

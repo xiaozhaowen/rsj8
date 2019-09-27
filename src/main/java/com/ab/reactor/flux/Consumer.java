@@ -25,6 +25,8 @@ public class Consumer {
                 .map(x -> {
                     System.out.println("流水线map工作：" + x);
                     return x;
+                }).doOnSubscribe(x->{
+                    System.out.println("触发订阅事件");
                 });
         flux.subscribe();
     }
@@ -190,11 +192,14 @@ public class Consumer {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
     }
 
 
+
+
+
+
     public static void main(String[] args) {
-        cancelByDispose();
+        justTrigger();
     }
 }
